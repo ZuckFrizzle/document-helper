@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Document Management System</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/vue@2"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+</head>
+<body>
+  <div id="app">
+    <!-- Left Sidebar -->
+    <div class="sidebar">
+      <div class="sidebar-section">
+        <h3>Documents</h3>
+        <ul>
+          <li @click="showTrash = false" :class="{ active: !showTrash }">All Documents</li>
+          <li @click="showTrash = true" :class="{ active: showTrash }">Trash</li>
+        </ul>
+      </div>
+      <div class="sidebar-section">
+        <h3>Folders</h3>
+        <div class="folder-list">
+          <p @click="createFolder()">+ Create New Folder</p>
+          <ul>
+            <li v-for="folder in folders" :key="folder.id">
+              <span>{{ folder.name }}</span>
+            </li>
+          </ul>
+        </div>
+      </div>
+      <div class="sidebar-section">
+        <h3>Tags</h3>
+        <ul>
+          <li>Thesis Defense</li>
+          <li>Exam Exemption</li>
+          <li>Course Modules</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content">
+      <!-- Top Navigation Bar -->
+      <div class="top-nav">
+        <div class="account-info">
+          <img src="assets/image/chat.png" alt="Chat" class="nav-icon">
+          <img src="assets/image/notification.png" alt="Notification" class="nav-icon">
+          <div class="account-dropdown">
+            <img src="assets/image/avatardefault_92824.png" alt="Avatar" class="avatar">
+            <div class="account-details">
+              <div class="account-name" v-if="currentUser">{{ currentUser.name }}</div>
+              <div class="account-email" v-if="currentUser">{{ currentUser.email }}</div>
+              <div class="account-status">Online</div>
+            </div>
+            <button v-if="currentUser" @click="logout" class="logout-btn">Logout</button>
+            <button v-else @click="showLogin = true">Login / Sign Up</button>
+          </div>
+        </div>
+      </div>
+
+
+      <div class="upload-container">
+        <label for="pdf-upload" class="upload-btn">Upload PDF</label>
+        <input type="file" id="pdf-upload" accept="application/pdf" onchange="handleFileUpload()">
+      </div>
+      
+      <div class="pdf-container" id="pdf-container"></div>
+      
+      <div id="extracted-data">
+        <h3>Extracted Metadata</h3>
+        <pre id="metadata-output"></pre>
+      </div>
+      
+
+      <!-- Main Container -->
+      <div class="container" v-if="currentUser">
+        <div class="main-title">Document Management</div>
+
+        <!-- Secondary Toolbar -->
+        <div class="toolbar">
+          <div class="left-buttons">
+            <button @click="selectAll">Select all file</button>
+            <button @click="triggerUpload">Upload new file</button>
+          </div>
+          <div class="search-box">
+            <input type="text" v-model="searchTerm" placeholder="Search documents...">
+          </div>
+        </div>
+
+        <!-- Table Container -->
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th class="action-column"></th> 
+                <th class="action-column"></th> 
+                <th>Document Name</th>
+                <th>Document ID</th>
+                <th>Date Created</th>
+                <th>Signatory</th>
+                <th>Students</th>
+                <th>Staffs</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="doc in filteredDocuments" :key="doc.docId">
+                <td><button @click="previewDocument(doc.docId)" class="icon-button"><i class="fas fa-paperclip"></i></button></td>
+                <td><button @click="openEditModal(doc.docId)" class="icon-button"><i class="fas fa-file-pen"></i></button></td>
+                <td>{{ doc.metadata.fileName }}</td>
+                <td>{{ doc.metadata.docId }}</td>
+                <td>{{ doc.metadata.dateCreated }}</td>
+                <td>{{ doc.metadata.signatory }}</td>
+                <td>{{ formatNames(doc.metadata.students) }}</td>
+                <td>{{ formatNames(doc.metadata.staffs) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- If not logged in -->
+      <div class="container" v-else>
+        <div class="main-title">Please log in to manage documents</div>
+      </div>
+
+      <!-- Hidden File Input -->
+      <input type="file" ref="fileInput" style="display:none" accept=".pdf" multiple @change="uploadFile">
+
+      <!-- Login Modal -->
+      <div v-if="showLogin" class="modal" @click.self="showLogin = false">
+        <div class="modal-content">
+          <h3>Login / Sign Up</h3>
+          <input type="text" v-model="loginForm.name" placeholder="Username">
+          <input type="email" v-model="loginForm.email" placeholder="Email">
+          <input type="password" v-model="loginForm.password" placeholder="Password">
+          <button @click="login">Login / Sign Up</button>
+        </div>
+      </div>
+
+      <!-- Add this inside <body> in index.html -->
+      <div v-if="showPreviewModal" class="modal" @click.self="closePreviewModal">
+        <div class="modal-content preview-modal">
+         <span class="close-button" @click="closePreviewModal">&times;</span>
+         <h3>Document Preview</h3>
+         <iframe :src="previewSrc" frameborder="0"></iframe>
+        </div>
+      </div>
+
+      <!-- Edit Modal -->
+      <div v-if="showEditModal" class="modal" @click.self="closeEditModal">
+        <div class="modal-content">
+          <span class="close-button" @click="closeEditModal">&times;</span>
+          <h3>Edit Document</h3>
+          <label>Doc ID</label>
+          <input type="text" v-model="editForm.docId">
+          <label>Date Created (YYYY-MM-DD)</label>
+          <input type="text" v-model="editForm.dateCreated">
+          <label>Signatory</label>
+          <input type="text" v-model="editForm.signatory">
+          <button class="save-btn" @click="saveEdit">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="main.js"></script>
+</body>
+</html>
