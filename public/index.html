@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Document Management System</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/vue@2"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+  <style>
+    .sidebar {
+      background-color: #0d1b2a;
+      color: white;
+      width: 250px;
+      position: fixed;
+      height: 100vh;
+      overflow-y: auto;
+      padding: 20px;
+      box-sizing: border-box;
+    }
+
+    .sidebar-section ul {
+      list-style: none;
+      padding-left: 0;
+    }
+
+    .sidebar-section ul li {
+      color: #ccc;
+      cursor: pointer;
+      padding: 8px 0;
+      transition: color 0.3s;
+    }
+
+    .sidebar-section ul li:hover {
+      color: white;
+    }
+
+    .sidebar-section ul li.active {
+      color: white;
+      font-weight: bold;
+    }
+
+    .main-content {
+      margin-left: 250px;
+      width: calc(100% - 250px);
+      padding: 20px;
+      box-sizing: border-box;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <!-- Sidebar -->
+    <div class="sidebar">
+      <div class="sidebar-section">
+        <h3>Navigation</h3>
+        <ul>
+          <li @click="currentView = 'profile'" :class="{ active: currentView === 'profile' }"><i class="fas fa-user"></i> Profile</li>
+          <li @click="currentView = 'features'" :class="{ active: currentView === 'features' }"><i class="fas fa-star"></i> Features</li>
+          <li @click="currentView = 'test'" :class="{ active: currentView === 'test' }"><i class="fas fa-file-upload"></i> Test Upload</li>
+          <li @click="currentView = 'manager'" :class="{ active: currentView === 'manager' }"><i class="fas fa-folder-open"></i> Document Manager</li>
+          <li @click="currentView = 'settings'" :class="{ active: currentView === 'settings' }"><i class="fas fa-cog"></i> Settings</li>
+        </ul>
+      </div>
+      <div class="sidebar-section">
+        <h3>Folders</h3>
+        <div class="folder-list">
+          <p @click="createFolder()" style="color: #0af;">+ Create New Folder</p>
+          <ul>
+            <li v-for="folder in folders" :key="folder.id">
+              <i class="fas fa-folder"></i> {{ folder.name }}
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content">
+      <!-- Top Navigation Bar -->
+      <div class="top-nav">
+        <div class="account-info">
+          <img src="assets/image/chat.png" alt="Chat" class="nav-icon">
+          <img src="assets/image/notification.png" alt="Notification" class="nav-icon">
+          <div class="account-dropdown">
+            <img src="assets/image/avatardefault_92824.png" alt="Avatar" class="avatar">
+            <div class="account-details">
+              <div class="account-name" v-if="currentUser">{{ currentUser.name }}</div>
+              <div class="account-email" v-if="currentUser">{{ currentUser.email }}</div>
+              <div class="account-status">Online</div>
+            </div>
+            <button v-if="currentUser" @click="logout" class="logout-btn">Logout</button>
+            <button v-else @click="showLogin = true">Login / Sign Up</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Test Upload View -->
+      <div v-if="currentView === 'test'">
+        <div class="upload-container">
+          <label for="pdf-upload" class="upload-btn">Upload PDF</label>
+          <input type="file" id="pdf-upload" accept="application/pdf" onchange="handleFileUpload()">
+        </div>
+        <div class="pdf-container" id="pdf-container"></div>
+      </div>
+
+      <!-- Document Manager View -->
+      <div class="container" v-if="currentUser && currentView === 'manager'">
+        <div class="main-title">Document Management</div>
+        <div class="toolbar">
+          <div class="left-buttons">
+            <button @click="selectAll">Select all file</button>
+            <button @click="triggerUpload">Upload new file</button>
+          </div>
+          <div class="search-box">
+            <input type="text" v-model="searchTerm" placeholder="Search documents...">
+          </div>
+        </div>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th class="action-column"></th>
+                <th class="action-column"></th>
+                <th>Document Name</th>
+                <th>Document ID</th>
+                <th>Date Created</th>
+                <th>Signatory</th>
+                <th>Students</th>
+                <th>Staffs</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="doc in filteredDocuments" :key="doc.docId">
+                <td><button @click="previewDocument(doc.docId)" class="icon-button"><i class="fas fa-paperclip"></i></button></td>
+                <td><button @click="openEditModal(doc.docId)" class="icon-button"><i class="fas fa-file-pen"></i></button></td>
+                <td>{{ doc.metadata.fileName }}</td>
+                <td>{{ doc.metadata.docId }}</td>
+                <td>{{ doc.metadata.dateCreated }}</td>
+                <td>{{ doc.metadata.signatory }}</td>
+                <td>{{ formatNames(doc.metadata.students) }}</td>
+                <td>{{ formatNames(doc.metadata.staffs) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="container" v-if="!currentUser && currentView === 'manager'">
+        <div class="main-title">Please log in to manage documents</div>
+      </div>
+
+      <!-- Hidden Upload -->
+      <input type="file" ref="fileInput" style="display:none" accept=".pdf" multiple @change="uploadFile">
+
+      <!-- Login Modal -->
+      <div v-if="showLogin" class="modal" @click.self="showLogin = false">
+        <div class="modal-content">
+          <h3>Login / Sign Up</h3>
+          <input type="text" v-model="loginForm.name" placeholder="Username">
+          <input type="email" v-model="loginForm.email" placeholder="Email">
+          <input type="password" v-model="loginForm.password" placeholder="Password">
+          <button @click="login">Login / Sign Up</button>
+        </div>
+      </div>
+
+      <!-- Preview Modal -->
+      <div v-if="showPreviewModal" class="modal" @click.self="closePreviewModal">
+        <div class="modal-content preview-modal">
+          <span class="close-button" @click="closePreviewModal">&times;</span>
+          <h3>Document Preview</h3>
+          <iframe :src="previewSrc" frameborder="0"></iframe>
+        </div>
+      </div>
+
+      <!-- Edit Modal -->
+      <div v-if="showEditModal" class="modal" @click.self="closeEditModal">
+        <div class="modal-content">
+          <span class="close-button" @click="closeEditModal">&times;</span>
+          <h3>Edit Document</h3>
+          <label>Doc ID</label>
+          <input type="text" v-model="editForm.docId">
+          <label>Date Created (YYYY-MM-DD)</label>
+          <input type="text" v-model="editForm.dateCreated">
+          <label>Signatory</label>
+          <input type="text" v-model="editForm.signatory">
+          <button class="save-btn" @click="saveEdit">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PDF.js Layout-Only Renderer -->
+  <script>
+    async function renderPDFAndExtract(pdfData) {
+      try {
+        const loadingTask = pdfjsLib.getDocument({ data: pdfData });
+        const pdf = await loadingTask.promise;
+        const pdfContainer = document.getElementById("pdf-container");
+        pdfContainer.innerHTML = "";
+
+        for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+          const page = await pdf.getPage(pageNum);
+          const scale = 1.5;
+          const viewport = page.getViewport({ scale });
+
+          const pageWrapper = document.createElement("div");
+          pageWrapper.classList.add("pdf-page");
+          pageWrapper.style.position = "relative";
+          pageWrapper.style.width = `${viewport.width}px`;
+          pageWrapper.style.height = `${viewport.height}px`;
+          pageWrapper.style.background = "#fff";
+          pageWrapper.style.border = "1px solid #ddd";
+          pageWrapper.style.marginBottom = "20px";
+          pdfContainer.appendChild(pageWrapper);
+
+          const textContent = await page.getTextContent();
+          for (let item of textContent.items) {
+            const span = document.createElement("span");
+            const tx = pdfjsLib.Util.transform(viewport.transform, item.transform);
+            span.textContent = item.str;
+            span.style.position = "absolute";
+            span.style.left = `${tx[4]}px`;
+            span.style.top = `${tx[5] - item.height}px`;
+            span.style.fontSize = `${item.height}px`;
+            span.style.fontFamily = item.fontName || "Times";
+            span.style.whiteSpace = "pre";
+            span.style.lineHeight = "1";
+            span.style.color = "#111";
+            pageWrapper.appendChild(span);
+          }
+        }
+      } catch (error) {
+        console.error("Error rendering PDF layout:", error);
+        document.getElementById("pdf-container").innerHTML = "<p>Failed to extract PDF layout.</p>";
+      }
+    }
+
+    function handleFileUpload() {
+      const fileInput = document.getElementById("pdf-upload");
+      if (!fileInput.files.length) {
+        console.error("No file selected.");
+        return;
+      }
+      const file = fileInput.files[0];
+      const reader = new FileReader();
+      reader.onload = function (event) {
+        const pdfData = new Uint8Array(event.target.result);
+        document.getElementById("pdf-container").innerHTML = "";
+        renderPDFAndExtract(pdfData);
+      };
+      reader.readAsArrayBuffer(file);
+    }
+  </script>
+
+  <script src="main.js"></script>
+</body>
+</html>
